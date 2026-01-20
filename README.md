@@ -19,5 +19,5 @@ This project is distributed via **GitHub Releases** (no `uv` required for instal
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sarhatabaot/skycam-python/main/scripts/install.sh \
-  | REPO="sarhatabaot/skycam-python" TAG="latest" bash
+  | REPO="sarhatabaot/skycam-python" TAG="0.1.0" bash
 ```
