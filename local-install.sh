@@ -5,7 +5,7 @@ set -euo pipefail
 CLI_NAME="skycam-cli"
 
 # Where your source code lives
-SOURCE_DIR="/ocs/python/skycam-python"
+SOURCE_DIR="$HOME/python/skycam-python"
 
 # Where uv keeps its managed environment
 PROJECT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/skycam-python/project"
