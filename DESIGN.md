@@ -343,10 +343,9 @@ class SkycamService:
 ## Development Roadmap
 
 ### Phase 1: Core Implementation
-- [ ] Basic CLI structure with start/stop commands
-- [ ] GPhoto2 integration and camera detection
-- [ ] Template loading and validation system
-- [ ] File monitoring and renaming functionality
+- [x] Basic CLI structure with start/stop commands
+- [x] GPhoto2 integration and camera detection
+- [x] Template loading and validation system
 
 ### Phase 2: Advanced Features
 - [ ] Configuration management system
