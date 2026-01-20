@@ -1,0 +1,17 @@
+[project]
+name = "skycam-cli"
+version = "0.1.0"
+description = "Skycam command-line interface."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "skycam-common",
+  "typer==0.21.1",
+  "rich==14.2.0",
+]
+
+[project.scripts]
+skycam = "skycam_cli.cli:main"
+
+[tool.uv.sources]
+skycam-common = { workspace = true }
