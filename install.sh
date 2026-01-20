@@ -88,12 +88,14 @@ github_api_get() {
 print_github_api_error() {
   # Usage: print_github_api_error <bodyfile>
   local bodyfile="$1"
-  "$PYTHON" - <<'PY' <"$bodyfile" 2>/dev/null || true
-import json,sys
+  "$PYTHON" - "$bodyfile" <<'PY' 2>/dev/null || true
+import json, sys
+path = sys.argv[1]
 try:
-    j=json.load(sys.stdin)
-    msg=j.get("message")
-    doc=j.get("documentation_url")
+    with open(path, "r", encoding="utf-8") as f:
+        j = json.load(f)
+    msg = j.get("message")
+    doc = j.get("documentation_url")
     if msg:
         print(f"[install][error] GitHub API message: {msg}", file=sys.stderr)
     if doc:
@@ -133,9 +135,11 @@ fetch_release_json() {
       fi
 
       # Convert array -> first object
-      "$PYTHON" - <<'PY' <"$list_out" >"$out"
-import json,sys
-arr=json.load(sys.stdin)
+      "$PYTHON" - "$list_out" <<'PY' >"$out"
+import json, sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    arr = json.load(f)
 if not arr:
     raise SystemExit("No releases found in /releases list.")
 print(json.dumps(arr[0]))
@@ -178,10 +182,13 @@ select_artifact() {
 
   log "Step 2/4: Selecting artifact (prefix='$ASSET_PREFIX', linux x86_64)..."
 
-  "$PYTHON" - <<'PY' <"$in"
+  ASSET_PREFIX="$ASSET_PREFIX" "$PYTHON" - "$in" <<'PY'
 import json, sys, os
 
-j = json.load(sys.stdin)
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    j = json.load(f)
+
 assets = j.get("assets") or []
 prefix = os.environ.get("ASSET_PREFIX", "skycam_cli")
 
