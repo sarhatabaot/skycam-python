@@ -8,3 +8,9 @@ dependencies = [
     "gphoto2==2.6.3",
     "pyyaml"
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov"
+]
