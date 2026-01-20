@@ -1,0 +1,12 @@
+[project]
+name = "skycam-web"
+version = "0.1.0"
+description = "Skycam web app (future)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "skycam-common",
+]
+
+[tool.uv.sources]
+skycam-common = { workspace = true }

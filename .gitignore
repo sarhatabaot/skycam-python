@@ -1,0 +1,12 @@
+*.egg-info
+*.egg-info/*
+
+__pycache__
+uv.lock
+
+build
+.idea
+
+*.iml
+
+dist
