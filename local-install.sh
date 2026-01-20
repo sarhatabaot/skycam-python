@@ -40,7 +40,8 @@ install_project() {
 
   log "Installing project from $SOURCE_DIR into uv project"
   mkdir -p "$PROJECT_DIR"
-
+  
+  uv venv "$PROJECT_DIR"
   uv pip install --project "$PROJECT_DIR" -e "$SOURCE_DIR"
 }
 
