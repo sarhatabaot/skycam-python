@@ -6,8 +6,16 @@ REPO="${REPO:-sarhatabaot/skycam-python}"
 TAG="${TAG:-latest}"                         # "0.1.0" or "latest"
 ASSET_PREFIX="${ASSET_PREFIX:-skycam_cli}"   # expected dist prefix
 PYTHON="${PYTHON:-python3}"
+
+# Install modes:
+#   user -> "global for logged-in user" via pipx (preferred) or venv+symlink fallback
+#   venv -> install into VENV_DIR only (no global command)
 INSTALL_MODE="${INSTALL_MODE:-user}"         # user | venv
 VENV_DIR="${VENV_DIR:-.venv-skycam}"
+
+# CLI entrypoint name (console_scripts). Must match what your package exposes.
+# e.g. "skycam" if you want users to run `skycam`
+CLI_NAME="${CLI_NAME:-skycam}"
 # --------------------------------------------
 
 # ---------- Pretty logging ----------
@@ -15,9 +23,7 @@ log()  { printf '[install] %s\n' "$*" >&2; }
 warn() { printf '[install][warn] %s\n' "$*" >&2; }
 die()  { printf '[install][error] %s\n' "$*" >&2; exit 1; }
 
-need() {
-  command -v "$1" >/dev/null 2>&1 || die "Missing dependency: '$1'"
-}
+need() { command -v "$1" >/dev/null 2>&1 || die "Missing dependency: '$1'"; }
 
 # Print the exact command + line on failure (helps a lot)
 on_err() {
@@ -28,7 +34,7 @@ on_err() {
   if [[ -n "$cmd" ]]; then
     printf '[install][error] Command: %s\n' "$cmd" >&2
   fi
-  printf '[install][error] Tip: re-run with: bash -x install.sh ...  (or set DEBUG=1)\n\n' >&2
+  printf '[install][error] Tip: re-run with: DEBUG=1 ...  (or: bash -x install.sh)\n\n' >&2
   exit "$exit_code"
 }
 trap 'on_err ${LINENO} "$BASH_COMMAND"' ERR
@@ -46,23 +52,8 @@ cleanup() { rm -rf "$tmp"; }
 trap cleanup EXIT
 
 # ---------- Helpers ----------
-curl_to_file() {
-  # Usage: curl_to_file <url> <outfile>
-  local url="$1"
-  local out="$2"
-
-  # We want BOTH the HTTP code and the body for diagnostics.
-  # -sS keeps errors, -L follows redirects
-  local code
-  code="$(curl -sS -L -o "$out" -w "%{http_code}" "$url")" || {
-    die "Network error while requesting: $url"
-  }
-  printf '%s' "$code"
-}
-
 github_api_get() {
   # Usage: github_api_get <url> <outfile>
-  # Adds Accept header. Also supports optional token if user sets GITHUB_TOKEN.
   local url="$1"
   local out="$2"
   local code
@@ -86,7 +77,6 @@ github_api_get() {
 }
 
 print_github_api_error() {
-  # Usage: print_github_api_error <bodyfile>
   local bodyfile="$1"
   "$PYTHON" - "$bodyfile" <<'PY' 2>/dev/null || true
 import json, sys
@@ -121,7 +111,6 @@ fetch_release_json() {
       return 0
     fi
 
-    # If latest returns 404, fallback to list releases
     if [[ "$code" == "404" ]]; then
       warn "GitHub API /releases/latest returned 404."
       warn "Falling back to: /releases?per_page=1 (most recent release in list)."
@@ -129,12 +118,8 @@ fetch_release_json() {
       local list_out="$tmp/releases_list.json"
       url="https://api.github.com/repos/$REPO/releases?per_page=1"
       code="$(github_api_get "$url" "$list_out")"
+      [[ "$code" == "200" ]] || die "Failed to list releases (HTTP $code) from: $url"
 
-      if [[ "$code" != "200" ]]; then
-        die "Failed to list releases (HTTP $code) from: $url"
-      fi
-
-      # Convert array -> first object
       "$PYTHON" - "$list_out" <<'PY' >"$out"
 import json, sys
 path = sys.argv[1]
@@ -148,16 +133,12 @@ PY
       return 0
     fi
 
-    # Other errors (rate limit etc.)
     warn "GitHub API /releases/latest returned HTTP $code."
     print_github_api_error "$out"
-    if [[ "$code" == "403" ]]; then
-      warn "If you're rate-limited, try: export GITHUB_TOKEN=... (a GitHub personal access token)."
-    fi
+    [[ "$code" == "403" ]] && warn "If you're rate-limited, try: export GITHUB_TOKEN=..."
     die "Cannot fetch release metadata."
   fi
 
-  # Explicit tag
   log "Step 1/4: Fetching release metadata for TAG='$TAG' from GitHub API..."
   url="https://api.github.com/repos/$REPO/releases/tags/$TAG"
   code="$(github_api_get "$url" "$out")"
@@ -179,7 +160,6 @@ select_artifact() {
   # 3) any prefix wheel
   # 4) sdist (.tar.gz)
   local in="$tmp/release.json"
-
   log "Step 2/4: Selecting artifact (prefix='$ASSET_PREFIX', linux x86_64)..."
 
   ASSET_PREFIX="$ASSET_PREFIX" "$PYTHON" - "$in" <<'PY'
@@ -217,7 +197,6 @@ if chosen is None:
     chosen = sdists[0] if sdists else None
 
 if chosen is None:
-    # Print assets list for debugging
     sys.stderr.write("[install][error] No suitable assets found on this release.\n")
     sys.stderr.write(f"[install][error] Expected: '{prefix}*.whl' (preferred) or any '.tar.gz'.\n")
     sys.stderr.write("[install][error] Assets on this release were:\n")
@@ -238,7 +217,6 @@ download_artifact() {
   log "  URL:  $artifact_url"
   log "  File: $artifact_name"
 
-  # Use -f to fail on non-2xx; keep retries
   curl -fL --retry 3 --retry-delay 1 -o "$out" "$artifact_url" || {
     die "Failed to download artifact from: $artifact_url"
   }
@@ -255,33 +233,93 @@ ensure_pip() {
   "$PYTHON" -m pip --version >/dev/null 2>&1 || die "pip is not available for $PYTHON."
 }
 
+ensure_path_hint() {
+  # Helpful hint if ~/.local/bin isn't on PATH
+  if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    warn "Your PATH may not include ~/.local/bin (common on some distros)."
+    warn "Add this to your shell profile (~/.bashrc or ~/.zshrc):"
+    warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+}
+
+install_via_pipx() {
+  local artifact_path="$1"
+
+  if ! command -v pipx >/dev/null 2>&1; then
+    return 1
+  fi
+
+  log "Using pipx (recommended for CLI apps)."
+  pipx install --force "$artifact_path"
+  log "Installed successfully via pipx."
+  log "Run: $CLI_NAME"
+  ensure_path_hint
+  return 0
+}
+
+install_via_user_venv_symlink() {
+  local artifact_path="$1"
+
+  local base="${XDG_DATA_HOME:-$HOME/.local/share}/skycam"
+  local venv_dir="$base/venv"
+  local bin_dir="$HOME/.local/bin"
+  local target="$venv_dir/bin/$CLI_NAME"
+  local link="$bin_dir/$CLI_NAME"
+
+  log "Installing into per-user venv + symlink (global for logged-in user)..."
+  log "  venv:  $venv_dir"
+  log "  link:  $link -> $target"
+
+  mkdir -p "$base" "$bin_dir"
+  "$PYTHON" -m venv "$venv_dir"
+  # shellcheck disable=SC1090
+  source "$venv_dir/bin/activate"
+  python -m pip install --upgrade pip
+  python -m pip install "$artifact_path"
+
+  if [[ ! -x "$target" ]]; then
+    warn "Expected CLI at: $target"
+    warn "Available venv bin entries:"
+    ls -1 "$venv_dir/bin" >&2 || true
+    die "Could not find '$CLI_NAME' executable in venv. Set CLI_NAME to your console_script name."
+  fi
+
+  ln -sf "$target" "$link"
+  log "Installed successfully."
+  log "Run: $CLI_NAME"
+  ensure_path_hint
+  return 0
+}
+
 install_artifact() {
   local artifact_path="$1"
   local artifact_name
   artifact_name="$(basename "$artifact_path")"
 
   log "Step 4/4: Installing '$artifact_name' (mode=$INSTALL_MODE)..."
-  ensure_pip
 
   if [[ "$INSTALL_MODE" == "user" ]]; then
-    if "$PYTHON" -m pip install --user "$artifact_path"; then
-      log "Installed successfully (user)."
-      log "If 'skycam' isn't found, ensure ~/.local/bin is on your PATH."
+    # Best UX for CLI: pipx if available
+    if install_via_pipx "$artifact_path"; then
       return 0
     fi
-    warn "User install failed (common on externally-managed Python / PEP 668)."
-    warn "Try: INSTALL_MODE=venv $0"
-    return 1
+
+    # Fallback: venv + symlink into ~/.local/bin
+    warn "pipx not found; using venv + symlink fallback."
+    warn "Tip: Install pipx for easier upgrades/uninstalls (e.g. apt install pipx)."
+    install_via_user_venv_symlink "$artifact_path"
+    return 0
   fi
 
   if [[ "$INSTALL_MODE" == "venv" ]]; then
+    # Classic local venv behavior (no global symlink)
     "$PYTHON" -m venv "$VENV_DIR"
     # shellcheck disable=SC1090
     source "$VENV_DIR/bin/activate"
     python -m pip install --upgrade pip
     python -m pip install "$artifact_path"
     log "Installed into venv: $VENV_DIR"
-    log "Run: $VENV_DIR/bin/skycam"
+    log "Run: $VENV_DIR/bin/$CLI_NAME"
     return 0
   fi
 
@@ -292,6 +330,7 @@ install_artifact() {
 log "Repo: $REPO"
 log "Tag:  $TAG"
 log "Prefix: $ASSET_PREFIX"
+log "CLI:  $CLI_NAME"
 
 fetch_release_json
 
