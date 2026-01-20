@@ -2,6 +2,14 @@ import typer
 from rich import print
 from typing import Optional
 
+try:
+    from skycam_common.camera import Camera, CameraSettings, CameraNotFoundError, CameraConnectionError
+    from skycam_common.exceptions import *
+    CAMERA_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Camera modules not available: {e}")
+    CAMERA_AVAILABLE = False
+
 app = typer.Typer(help="Skycam CLI - DSLR camera control for astrophotography")
 
 @app.command()
@@ -19,25 +27,98 @@ def start(
     """Start a skycam capture session."""
     print("🚀 Starting skycam capture session...")
     
+    if not CAMERA_AVAILABLE:
+        print("❌ Camera functionality not available. Check dependencies.")
+        return
+    
     if dry_run:
         print("🔍 Dry run mode - showing configuration:")
     
-    # TODO: Implement actual capture logic
-    print("📸 Capture configuration:")
-    if template:
-        print(f"  Template: {template}")
+    # Create settings from command line options
+    settings = CameraSettings()
     if exposure:
-        print(f"  Exposure: {exposure}s")
+        settings.exposure = exposure
     if aperture:
-        print(f"  Aperture: f/{aperture}")
+        settings.aperture = aperture
     if delay:
-        print(f"  Delay: {delay}s")
+        settings.delay = delay
     if iso:
-        print(f"  ISO: {iso}")
+        settings.iso = iso
+    if max_exposures is not None:
+        settings.max_exposures = max_exposures
+    
+    print("📸 Capture configuration:")
+    print(f"  Exposure: {settings.exposure}s")
+    print(f"  Aperture: f/{settings.aperture}")
+    print(f"  Delay: {settings.delay}s")
+    print(f"  ISO: {settings.iso}")
     if output_dir:
         print(f"  Output: {output_dir}")
-    if max_exposures is not None:
-        print(f"  Max exposures: {max_exposures}")
+    print(f"  Max exposures: {settings.max_exposures}")
+    
+    if template:
+        print(f"  Template: {template} (template loading not implemented yet)")
+    
+    if dry_run:
+        print("✅ Dry run completed - no actual capture performed")
+        return
+    
+    # Connect to camera and start capture
+    try:
+        with Camera(port=port) as camera:
+            print(f"📷 Connecting to camera...")
+            
+            # Detect cameras if no port specified
+            if not port:
+                cameras = camera.detect_cameras()
+                if len(cameras) == 0:
+                    print("❌ No cameras detected. Please connect a camera and try again.")
+                    return
+                print(f"✅ Found {len(cameras)} camera(s)")
+                for i, cam in enumerate(cameras):
+                    print(f"  {i+1}. {cam}")
+            
+            # Connect to camera
+            print("🔌 Connecting to camera...")
+            camera.connect()
+            print("✅ Camera connected successfully")
+            
+            # Show camera info
+            info = camera.get_camera_info()
+            print(f"📊 Camera info: {info}")
+            
+            # Validate settings
+            validated_settings, warnings = camera.validate_settings(settings)
+            if warnings:
+                print("⚠️ Settings warnings:")
+                for warning in warnings:
+                    print(f"  - {warning}")
+            
+            # Configure camera
+            config_warnings = camera.configure_camera(validated_settings)
+            if config_warnings:
+                print("⚠️ Configuration warnings:")
+                for warning in config_warnings:
+                    print(f"  - {warning}")
+            
+            print("🎯 Starting capture session...")
+            print("📸 (Single capture for demo - continuous capture not yet implemented)")
+            
+            # Capture single image for now
+            result = camera.capture_single()
+            if result.success:
+                print(f"✅ Capture successful!")
+                print(f"  File: {result.filename}")
+                print(f"  Path: {result.filepath}")
+            else:
+                print(f"❌ Capture failed: {result.error_message}")
+            
+    except CameraNotFoundError as e:
+        print(f"❌ Camera not found: {e}")
+    except CameraConnectionError as e:
+        print(f"❌ Camera connection error: {e}")
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
 
 @app.command()
 def stop(
@@ -57,10 +138,28 @@ def status() -> None:
     """Show current skycam status."""
     print("📊 Skycam Status:")
     print("  Status: Ready")
-    print("  Camera: Not connected")
-    print("  Active sessions: 0")
     
-    # TODO: Implement actual status checking
+    if not CAMERA_AVAILABLE:
+        print("  Camera: Modules not available")
+        print("  Active sessions: 0")
+        print("  Last session: None")
+        return
+    
+    try:
+        with Camera() as camera:
+            cameras = camera.detect_cameras()
+            print(f"  Camera: {len(cameras)} detected")
+            for i, cam in enumerate(cameras):
+                print(f"    {i+1}. {cam}")
+            
+            if cameras:
+                print("  Connection status: Ready to connect")
+            else:
+                print("  Connection status: No cameras available")
+    except Exception as e:
+        print(f"  Camera: Error checking status - {e}")
+    
+    print("  Active sessions: 0")
     print("  Last session: None")
 
 # Templates subcommand group

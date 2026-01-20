@@ -5,5 +5,6 @@ description = "Shared utilities for skycam tools."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "gphoto2==2.6.3"
+    "gphoto2==2.6.3",
+    "pyyaml"
 ]
