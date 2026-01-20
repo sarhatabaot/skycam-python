@@ -234,7 +234,7 @@ class TemplateManager:
         warnings = template.validate(capabilities)
         
         # Check required fields
-        if template.name is None:
+        if not template.name or template.name.strip() == "":
             warnings.append("Template name is required")
         
         return warnings
