@@ -1,8 +1,0 @@
-README.md
-pyproject.toml
-src/skycam_common/__init__.py
-src/skycam_common/core.py
-src/skycam_common.egg-info/PKG-INFO
-src/skycam_common.egg-info/SOURCES.txt
-src/skycam_common.egg-info/dependency_links.txt
-src/skycam_common.egg-info/top_level.txt
